@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent        # mini_waku_agent/
 sys.path[:0] = [str(ROOT), str(ROOT / "session"), str(ROOT / "memory")]
 
 from consolidation import consolidate_if_due   # noqa: E402
-from llm import LLM                 # noqa: E402  必须在 sys.path 之后
+from llm import EmptyReply, LLM     # noqa: E402  必须在 sys.path 之后
 from session import Session         # noqa: E402
 from setting import CONSOLIDATE_EVERY_N, MODEL   # noqa: E402
 from store import Memory            # noqa: E402
@@ -36,7 +36,13 @@ def main() -> None:
     session = Session(memory=memory, model=MODEL)
 
     def turn(user: str) -> None:
-        reply = llm.chat(session.build_messages(user))   # system 在第一条
+        try:
+            reply = llm.chat(session.build_messages(user))   # system 在第一条
+        except EmptyReply as exc:
+            # 空回复：既不当作回答，也不写进历史 / chat_log —— 免得污染记忆
+            print(f"（模型这次没给出回答：{exc}）")
+            print("  再说一次通常就好；老是这样就调大 MINIWAKU_MAX_TOKENS。\n")
+            return
         session.add_exchange(user, reply)                # 会话历史 + 落盘
         memory.log_exchange(user, reply)                 # 这一轮也进 chat_log，供蒸馏
         print(f"agent › {reply}\n")
