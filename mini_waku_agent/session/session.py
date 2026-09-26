@@ -12,6 +12,8 @@
     s.switch("default")      # 切回旧会话（历史从磁盘装回来）
     s.sessions()             # 有哪些会话
 
+目录、人格文件、窗口轮数、检索条数都在 ../setting.py。
+
 和 memory 的分工：
 
     session   这一段对话说过什么 —— 工作记忆，长了会被窗口截掉
@@ -19,7 +21,7 @@
 
 所以两者是互补的：会话负责"刚才聊到哪"，memory 负责"我一直记得什么"。
 memory 是鸭子类型，只要有 search(query, k=4) -> list[dict] 就能用，
-这一层不 import chromadb。
+这一层不 import 任何存储实现。
 
 用法（看有哪些会话 / 看某个会话）：
     python session.py
@@ -34,10 +36,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent          # mini_waku_agent/session
-SESSIONS = ROOT / "sessions"
-TURNS = 12                                       # 滑动窗口：带最近几轮进 prompt
-PERSONA = "你是一个简洁、友好的中文助手。回答尽量短，不要编造长期记忆里没有的事。"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # mini_waku_agent/
+from setting import (  # noqa: E402
+    DEFAULT_SOUL, HISTORY_TURNS, SEARCH_K, SESSIONS_DIR, SOUL_FILE,
+)
 
 
 def _safe(session_id: str) -> str:
@@ -49,10 +51,21 @@ def _now() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def load_soul() -> str:
+    """读 soul.md 作为人格。文件不存在就创建，写入 DEFAULT_SOUL。
+
+    每次 build_system 都重新读一遍 —— 直接编辑 soul.md 就能改人格，
+    不用重启程序。
+    """
+    if not SOUL_FILE.exists():
+        SOUL_FILE.write_text(DEFAULT_SOUL, encoding="utf-8")
+    return SOUL_FILE.read_text(encoding="utf-8").strip()
+
+
 class Session:
     def __init__(self, memory=None, model: str = "", session_id: str = "default",
-                 turns: int = TURNS, max_distance: float | None = None,
-                 path: Path = SESSIONS) -> None:
+                 turns: int = HISTORY_TURNS, max_distance: float | None = None,
+                 path: Path = SESSIONS_DIR) -> None:
         self.memory = memory
         self.model = model
         self.turns = turns
@@ -96,9 +109,9 @@ class Session:
         parts = []
         if self.model:
             parts.append(f"你运行在 {self.model} 上。")
-        parts.append(PERSONA)
+        parts.append(load_soul())
         if self.memory is not None:
-            hits = self.memory.search(user_message, k=4)
+            hits = self.memory.search(user_message, k=SEARCH_K)
             if self.max_distance is not None:
                 hits = [hit for hit in hits
                         if hit.get("distance", 0.0) <= self.max_distance]

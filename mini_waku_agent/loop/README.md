@@ -13,10 +13,10 @@ llm.py    openai SDK 的薄包装（DeepSeek = OpenAI 兼容端点）
 ## 依赖
 
 ```bash
-pip install openai python-dotenv chromadb
+pip install openai python-dotenv onnxruntime tokenizers numpy
 ```
 
-（`chromadb` 带进来的 `onnxruntime` / `tokenizers` 用来跑本地的中文 embedding 模型）
+（`onnxruntime` / `tokenizers` / `numpy` 用来跑本地的中文 embedding 模型）
 
 ## 跑
 
@@ -41,7 +41,7 @@ session.add_exchange(user, reply)         # 内存一份 + 磁盘一份
 
 `chat.py` 里没有 system prompt —— 它由 `Session.build_system()` 拼：
 「你运行在哪个模型上」+ 人格 + 这次检索到的长期记忆。想改人格，去改
-`session.py` 的 `PERSONA`，不用动循环。
+`session/soul.md`（首次运行会自动用 `DEFAULT_SOUL` 生成），不用动循环。
 
 ## 为什么这么写
 
