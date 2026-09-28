@@ -38,14 +38,12 @@ db.py 一个字都不用改。
 from __future__ import annotations
 
 import sqlite3
-import sys
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # mini_waku_agent/
-from setting import DB_FILE, MEMORY_TABLES  # noqa: E402
+from ..setting import DB_FILE, MEMORY_TABLES
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS {table} (

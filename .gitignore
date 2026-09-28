@@ -1,0 +1,20 @@
+# 密钥 / 本地环境（.env 里是真实 key，绝不能入库）
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.uv-cache/
+build/
+dist/
+
+# 运行时数据：记忆库、会话记录、下载的 embedding 模型
+mini_waku_agent/memory/memory.db
+mini_waku_agent/memory/.models/
+mini_waku_agent/session/sessions/
+
+# 编辑器 / 系统
+.DS_Store
+.idea/

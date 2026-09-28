@@ -17,10 +17,10 @@ fact.source 记来源：manual（手加）/ consolidation（蒸馏）。
     store.py      这一层：对外给 add / search，语义在文本、存储在下层
 
 用法：
-    python store.py add-fact "用户叫小明"
-    python store.py add-chat-log "聊了记忆系统的设计"
-    python store.py search "用户叫什么"
-    python store.py list
+    python -m mini_waku_agent.memory.store add-fact "用户叫小明"
+    python -m mini_waku_agent.memory.store add-chat-log "聊了记忆系统的设计"
+    python -m mini_waku_agent.memory.store search "用户叫什么"
+    python -m mini_waku_agent.memory.store list
 """
 
 from __future__ import annotations
@@ -30,11 +30,11 @@ import sys
 from datetime import date
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # mini_waku_agent/
-from setting import DB_FILE, MEMORY_TABLES, SEARCH_K  # noqa: E402
+from ..setting import DB_FILE, MEMORY_TABLES, SEARCH_K
 
-from db import VectorDB
-from embedding import embed
+from .db import VectorDB
+from .embedding import embed
+from .retrieval_gate import should_retrieve
 
 
 def _id(kind: str, text: str) -> str:
@@ -43,8 +43,9 @@ def _id(kind: str, text: str) -> str:
 
 
 class Memory:
-    def __init__(self, path: Path = DB_FILE) -> None:
+    def __init__(self, path: Path = DB_FILE, llm=None) -> None:
         self.db = VectorDB(path)
+        self.llm = llm            # 只给检索门控用（见 retrieval_gate.py）
 
     # ---- 写：直接进 SQLite 表 --------------------------------------------
     def add_fact(self, content: str, on: str | None = None,
@@ -83,6 +84,20 @@ class Memory:
                              "text": record["text"], "distance": record["distance"]})
         hits.sort(key=lambda hit: hit["distance"])
         return hits[:k]
+
+    def gated_retrieve(self, message: str, k: int = SEARCH_K) -> list[dict]:
+        """门控检索：先让便宜模型决定这一句要不要检索、检索什么，再决定碰不碰向量库。
+
+        参考 waku 的 Memory.gated_retrieve —— 默认每次都检索又慢又带偏回答，
+        所以在 search 之前先过一次门（retrieval_gate.should_retrieve）。没配 llm
+        就退化成直接 search，不影响 store.py 单独跑 CLI。
+        """
+        if self.llm is None:
+            return self.search(message, k=k)
+        retrieve, query, _ = should_retrieve(self.llm, message)
+        if not retrieve:
+            return []
+        return self.search(query or message, k=k)
 
 
 def main() -> None:

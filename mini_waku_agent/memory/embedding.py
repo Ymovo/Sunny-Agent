@@ -16,8 +16,6 @@ BGE 有两个必须照做的细节，漏了掉点很厉害：
 from __future__ import annotations
 
 import os
-import sys
-from pathlib import Path
 
 # 必须在 import onnxruntime 之前关掉遥测，否则它会在当前目录写 device ID 文件
 os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
@@ -26,8 +24,7 @@ import numpy as np
 import onnxruntime as ort
 from tokenizers import Tokenizer
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # mini_waku_agent/
-from setting import (  # noqa: E402
+from ..setting import (
     EMBED_MODEL_DIR, EMBED_QUERY_PREFIX, ONNX_LOG_LEVEL, ONNX_PROVIDERS,
 )
 

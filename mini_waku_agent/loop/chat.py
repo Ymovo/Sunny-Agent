@@ -1,43 +1,71 @@
-"""最小 agent loop —— 只做三件事：读一行、问一次、说一句。
+"""最小 agent loop —— 读一行、问一次（要工具就调工具）、说一句、记一轮。
 
-    加一句用户的话 → 问模型 → 把回答也加进历史 → 重复
+    加一句用户的话 → 问模型（带工具）→ 模型要工具就执行并回填 → 循环到它给出回答
+    → 把回答加进历史 / chat_log → 蒸馏
 
-会话状态**不在这里**：历史、滑动窗口、system prompt（模型那行 + 人格 +
-检索到的长期记忆）、落盘，全在 Session 里（../session/session.py）。
-长期记忆在 ../memory/。这个文件只负责把循环转起来。
+会话状态、system prompt、落盘在 Session（../session/session.py）；长期记忆在
+../memory/；工具在 ../tool/。这个文件只负责"把循环转起来" + "把零件装起来"。
 
-每轮对话会做两件事：
-  1. 把这一轮写进 chat_log（memory.log_exchange），长期留痕、供蒸馏；
-  2. 调一次 ../memory/consolidation.py —— chat_log 攒够 CONSOLIDATE_EVERY_N
-     条未蒸馏记录，才真正触发一次「提炼成 fact」。
-
-依赖：见 llm.py
+装配顺序（参考 waku 的 app.py）：llm → memory → tools → session，然后 loop。
 """
 
 from __future__ import annotations
 
+import json
 import sys
-from pathlib import Path
 
-# 项目是"一个目录一组脚本"的平铺结构，没有 package —— 跨目录 import 靠这几行
-ROOT = Path(__file__).resolve().parent.parent        # mini_waku_agent/
-sys.path[:0] = [str(ROOT), str(ROOT / "session"), str(ROOT / "memory")]
+from ..memory import Memory, consolidate_if_due
+from ..session import Session
+from ..setting import CONSOLIDATE_EVERY_N, MAX_ITERATIONS, MODEL
+from ..tool import build_registry
+from .llm import EmptyReply, LLM
 
-from consolidation import consolidate_if_due   # noqa: E402
-from llm import EmptyReply, LLM     # noqa: E402  必须在 sys.path 之后
-from session import Session         # noqa: E402
-from setting import CONSOLIDATE_EVERY_N, MODEL   # noqa: E402
-from store import Memory            # noqa: E402
+
+def run_turn(llm: LLM, session: Session, tools, user: str) -> str:
+    """一轮：system + 历史 + 这一句 → 循环（模型要工具就给工具结果）→ 最终回答。
+
+    参考 waku 的 loop/agent.py：reason（问一次）→ act（执行工具）→ observe（回填）
+    → 直到模型不再要工具（= 在对人说话），或撞上 MAX_ITERATIONS。
+    """
+    messages = session.build_messages(user)
+    for _ in range(MAX_ITERATIONS):
+        content, tool_calls, _ = llm.call(messages, tools.schemas())
+        if not tool_calls:                        # 模型不再要工具 = 在对人说话
+            return content
+
+        # 把 assistant 的 tool_calls 记进工作记忆，再逐个执行、把结果回填
+        messages.append({
+            "role": "assistant",
+            "content": content,
+            "tool_calls": [
+                {"id": call.id, "type": "function",
+                 "function": {"name": call.function.name,
+                              "arguments": call.function.arguments}}
+                for call in tool_calls
+            ],
+        })
+        for call in tool_calls:
+            name = call.function.name
+            try:
+                args = json.loads(call.function.arguments or "{}")
+            except json.JSONDecodeError:
+                args = {}                          # 参数是坏 JSON 就当没参数，工具会兜住
+            output = tools.execute(name, args)
+            messages.append({"role": "tool", "tool_call_id": call.id, "content": output})
+
+    return "(迭代次数用尽，先把这件事拆小一点再问)"
 
 
 def main() -> None:
+    # 装配（参考 waku/app.py 的 Waku.__init__）：llm → memory → tools → session
     llm = LLM()
-    memory = Memory()
+    memory = Memory(llm=llm)                       # 检索门控要用 llm 判断该不该翻记忆
+    tools = build_registry(memory)                 # 工具在这里注册
     session = Session(memory=memory, model=MODEL)
 
     def turn(user: str) -> None:
         try:
-            reply = llm.chat(session.build_messages(user))   # system 在第一条
+            reply = run_turn(llm, session, tools, user)
         except EmptyReply as exc:
             # 空回复：既不当作回答，也不写进历史 / chat_log —— 免得污染记忆
             print(f"（模型这次没给出回答：{exc}）")

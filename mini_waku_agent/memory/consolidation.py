@@ -18,20 +18,17 @@ every_n 条才跑一次**。每条都跑又贵又吵；攒一批再让模型读�
 every_n 条，不是 every_n * 2。
 
 用法：
-    python consolidation.py            # 手动跑一次
+    python -m mini_waku_agent.memory.consolidation   # 手动跑一次
 被 loop/chat.py 在每轮对话后调用（攒够才真正触发）。
 """
 
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # mini_waku_agent/
-from setting import CONSOLIDATE_EVERY_N  # noqa: E402
+from ..setting import CONSOLIDATE_EVERY_N
 
-from store import Memory  # noqa: E402
+from .store import Memory
 
 SUMMARIZER_PROMPT = """\
 你在把一个私人助手最近的记录，蒸馏成长期记忆。
@@ -86,8 +83,7 @@ def consolidate_if_due(memory: Memory, llm, *,
 
 def main() -> None:
     # 延迟 import：memory 层不该在模块级依赖 loop 层
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "loop"))
-    from llm import LLM
+    from ..loop.llm import LLM
 
     memory = Memory()
     before = len(memory.pending_chat_logs())

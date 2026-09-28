@@ -11,6 +11,7 @@
     MINIWAKU_SEARCH_K        检索回几条
     MINIWAKU_CONSOLIDATE_EVERY_N 攒够几条未蒸馏记录才跑一次蒸馏
     MINIWAKU_HISTORY_TURNS   会话窗口带几轮
+    MINIWAKU_MAX_ITERATIONS  一轮最多要几次工具才收尾
 
 各段具体怎么被用掉，见文件末尾的"谁在用"。
 """
@@ -88,6 +89,7 @@ CONSOLIDATE_EVERY_N = _env_int("MINIWAKU_CONSOLIDATE_EVERY_N", 4)
 
 # ============================================================ 会话
 HISTORY_TURNS = _env_int("MINIWAKU_HISTORY_TURNS", 12)   # 滑动窗口带最近几轮
+MAX_ITERATIONS = _env_int("MINIWAKU_MAX_ITERATIONS", 8)  # 一轮最多要几次工具才收尾
 
 # soul.md 不存在时写入的默认人格
 DEFAULT_SOUL = """\
@@ -119,11 +121,11 @@ Rules:
 
 # ============================================================ 谁在用
 #   loop/llm.py         BASE_URL / MODEL / MAX_TOKENS / API_KEY_ENV / ENV_FILE
-#   loop/chat.py        MODEL / CONSOLIDATE_EVERY_N
+#   loop/chat.py        MODEL / CONSOLIDATE_EVERY_N / MAX_ITERATIONS
 #   memory/consolidation.py CONSOLIDATE_EVERY_N
 #   memory/db.py        DB_FILE / MEMORY_TABLES
 #   memory/store.py     DB_FILE / MEMORY_TABLES / SEARCH_K
 #   memory/embedding.py EMBED_MODEL_DIR / EMBED_QUERY_PREFIX
 #                       ONNX_PROVIDERS / ONNX_LOG_LEVEL
-#   session/session.py  SESSIONS_DIR / SOUL_FILE / HISTORY_TURNS / SEARCH_K
-#                       DEFAULT_SOUL
+#   session/session.py  SESSIONS_DIR / SOUL_FILE / HISTORY_TURNS / DEFAULT_SOUL
+#   tool/soul.py        SOUL_FILE / DEFAULT_SOUL

@@ -21,8 +21,8 @@ pip install openai python-dotenv onnxruntime tokenizers numpy
 ## 跑
 
 ```bash
-python chat.py                  # 交互式，/quit 退出
-python chat.py "你好，介绍一下你自己"
+python -m mini_waku_agent.loop.chat                        # 交互式，/quit 退出
+python -m mini_waku_agent.loop.chat "你好，介绍一下你自己"
 ```
 
 key 写在 `mini_waku_agent/.env`：
@@ -34,9 +34,9 @@ DEEPSEEK_API_KEY=sk-...
 ## 一轮的顺序
 
 ```python
-messages = session.build_messages(user)   # system + 滑动窗口 + 这一句
-reply    = llm.chat(messages)             # 唯一的模型调用
-session.add_exchange(user, reply)         # 内存一份 + 磁盘一份
+reply = run_turn(llm, session, tools, user)   # system + 窗口 + 工具回环
+session.add_exchange(user, reply)             # 会话历史 + 落盘
+memory.log_exchange(user, reply)              # 也进 chat_log，供蒸馏
 ```
 
 `chat.py` 里没有 system prompt —— 它由 `Session.build_system()` 拼：
@@ -45,6 +45,6 @@ session.add_exchange(user, reply)         # 内存一份 + 磁盘一份
 
 ## 为什么这么写
 
-循环只认 `llm.chat(messages) -> str`。client、连接复用、重试、超时、错误映射
-全部交给 SDK，关在 `llm.py` 里 —— 换模型或换 provider 只动那一个文件的
-`BASE_URL` / `MODEL`。
+循环只认 `llm.call(messages, tools) -> (content, tool_calls, finish_reason)`。
+client、连接复用、重试、超时、错误映射全部交给 SDK，关在 `llm.py` 里 ——
+换模型或换 provider 只动那一个文件的 `BASE_URL` / `MODEL`。

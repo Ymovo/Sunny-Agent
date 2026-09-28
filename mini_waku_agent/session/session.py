@@ -12,7 +12,7 @@
     s.switch("default")      # 切回旧会话（历史从磁盘装回来）
     s.sessions()             # 有哪些会话
 
-目录、人格文件、窗口轮数、检索条数都在 ../setting.py。
+目录、人格文件、窗口轮数都在 ../setting.py；检索走 memory 的 gated_retrieve。
 
 和 memory 的分工：
 
@@ -20,12 +20,13 @@
     memory    跨会话的长期事实 / 情节 —— 不丢，靠检索取回
 
 所以两者是互补的：会话负责"刚才聊到哪"，memory 负责"我一直记得什么"。
-memory 是鸭子类型，只要有 search(query, k=4) -> list[dict] 就能用，
-这一层不 import 任何存储实现。
+memory 是鸭子类型，只要有 gated_retrieve(query) -> list[dict] 就能用
+（store.Memory 提供；不传 llm 时它退化成普通 search）。这一层不 import 任何
+存储实现，检索该不该发生由 memory 里的门控（retrieval_gate.py）决定。
 
 用法（看有哪些会话 / 看某个会话）：
-    python session.py
-    python session.py show default
+    python -m mini_waku_agent.session.session
+    python -m mini_waku_agent.session.session show default
 """
 
 from __future__ import annotations
@@ -36,9 +37,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # mini_waku_agent/
-from setting import (  # noqa: E402
-    DEFAULT_SOUL, HISTORY_TURNS, SEARCH_K, SESSIONS_DIR, SOUL_FILE,
+from ..setting import (
+    DEFAULT_SOUL, HISTORY_TURNS, SESSIONS_DIR, SOUL_FILE,
 )
 
 
@@ -111,7 +111,7 @@ class Session:
             parts.append(f"你运行在 {self.model} 上。")
         parts.append(load_soul())
         if self.memory is not None:
-            hits = self.memory.search(user_message, k=SEARCH_K)
+            hits = self.memory.gated_retrieve(user_message)
             if self.max_distance is not None:
                 hits = [hit for hit in hits
                         if hit.get("distance", 0.0) <= self.max_distance]

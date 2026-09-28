@@ -3,19 +3,20 @@
 依赖：pip install openai python-dotenv
 验证于 openai 2.53.0 / python-dotenv 1.2.2（2026-09-19）
 
-端点、模型名、token 上限都在 ../setting.py —— 这个文件只负责连接和说一句话。
+端点、模型名、token 上限都在 ../setting.py。
+
+call() 是带工具的底层：返回 (content, tool_calls, finish_reason)，空回复重试。
+chat() 是纯文本包装（蒸馏用）；真正"要工具 → 执行 → 回填"的循环在 loop/chat.py，
+这里只管连接和说一句话。
 """
 
 from __future__ import annotations
 
 import os
-import sys
-from pathlib import Path
 
 from openai import OpenAI
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # mini_waku_agent/
-from setting import (  # noqa: E402
+from ..setting import (
     API_KEY_ENV, BASE_URL, ENV_FILE, MAX_TOKENS, MODEL,
 )
 
@@ -31,7 +32,7 @@ class EmptyReply(RuntimeError):
 
 
 class LLM:
-    """一个 client，一个 chat()。网络那一层全交给 SDK。"""
+    """一个 client，一个 call()。网络那一层全交给 SDK。"""
 
     def __init__(self, model: str = MODEL) -> None:
         # .env 已由 setting.py 在 import 时加载好
@@ -42,22 +43,34 @@ class LLM:
         self.client = OpenAI(api_key=api_key, base_url=BASE_URL)
 
     # 连接大模型
-    def _once(self, messages: list[dict]) -> tuple[str, str]:
-        response = self.client.chat.completions.create(
-            model=self.model, messages=messages, max_tokens=MAX_TOKENS,
-        )
+    def _once(self, messages: list[dict],
+              tools: list[dict] | None = None) -> tuple[str, list, str]:
+        kwargs: dict = {"model": self.model, "messages": messages, "max_tokens": MAX_TOKENS}
+        if tools:
+            kwargs["tools"] = tools
+        response = self.client.chat.completions.create(**kwargs)
         choice = response.choices[0]
-        return choice.message.content or "", choice.finish_reason or ""
+        message = choice.message
+        return (message.content or "", message.tool_calls or [], choice.finish_reason or "")
 
-    def chat(self, messages: list[dict]) -> str:
-        """拿一次回复。空回复重试一次，还空就抛 EmptyReply —— 绝不静默返回空串。"""
-        content, finish = self._once(messages)
-        if content.strip():
-            return content
-        content, finish = self._once(messages)      # 换个采样再试，常能出内容
-        if content.strip():
-            return content
+    def call(self, messages: list[dict],
+             tools: list[dict] | None = None) -> tuple[str, list, str]:
+        """带工具的一次调用。空回复（既没内容也没要工具）重试一次，还空抛 EmptyReply。
+
+        tool_calls 是 OpenAI 的形状：[{id, type, function: {name, arguments}}]，没有则 []。
+        """
+        content, tool_calls, finish = self._once(messages, tools)
+        if tool_calls or content.strip():
+            return content, tool_calls, finish
+        content, tool_calls, finish = self._once(messages, tools)   # 换个采样再试，常能出内容
+        if tool_calls or content.strip():
+            return content, tool_calls, finish
         raise EmptyReply(
             f"连续两次空回复（finish_reason={finish}, max_tokens={MAX_TOKENS}）："
             "多半是思考过程把 token 配额吃光了 —— 调大 MINIWAKU_MAX_TOKENS，"
             "或换一个非推理模型")
+
+    def chat(self, messages: list[dict]) -> str:
+        """纯文本聊天（不带工具）：蒸馏那类一次调用。空回复重试后抛 EmptyReply。"""
+        content, _, _ = self.call(messages)
+        return content
